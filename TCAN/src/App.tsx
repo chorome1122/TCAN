@@ -208,7 +208,7 @@ const categoryGroups: CategoryGroup[] = [
     label: "顔",
     icon: Smile,
     children: [
-      { key: "faceBase", label: "顔", icon: Smile },
+      
       { key: "faceLine", label: "輪郭", icon: Smile },
       { key: "cheek", label: "チーク", icon: Sparkles },
       { key: "eyebrows", label: "眉毛", icon: Eye },
@@ -239,7 +239,7 @@ const categoryGroups: CategoryGroup[] = [
 ];
 
 const categoryLabels: Record<EditableCategory, string> = {
-  faceBase: "顔",
+  
   faceLine: "輪郭",
   cheek: "チーク",
   eyebrows: "眉毛",
