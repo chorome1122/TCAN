@@ -440,8 +440,8 @@ export default function PicrewLikeAvatarMaker() {
           <div className="flex items-center gap-3">
             <div className="grid h-12 w-12 place-items-center rounded-2xl bg-pink-100 text-3xl">🎀</div>
             <div>
-              <h1 className="text-2xl font-black tracking-tight sm:text-3xl">ぴくるー</h1>
-              <p className="text-xs text-zinc-500 sm:text-sm">PNGレイヤーを重ねるキャラメーカー</p>
+              <h1 className="text-2xl font-black tracking-tight sm:text-3xl">たくあん</h1>
+              <p className="text-xs text-zinc-500 sm:text-sm">vroid3Dキャラ作成メーカー</p>
             </div>
             <Sparkles className="ml-1 h-5 w-5 text-pink-300" />
           </div>
