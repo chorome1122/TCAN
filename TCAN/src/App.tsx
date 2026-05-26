@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 import React, { useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -44,7 +46,6 @@ type Part = {
 };
 
 type PartCategory =
-  | "faceBase"
   | "faceLine"
   | "cheek"
   | "eyebrows"
@@ -97,7 +98,6 @@ const transparent = makeLayerSvg("");
 const nonePart: Part = { id: "none", name: "なし", src: transparent };
 
 const categories: PartCategory[] = [
-  "faceBase",
   "faceLine",
   "cheek",
   "eyebrows",
@@ -116,7 +116,7 @@ const categories: PartCategory[] = [
 ];
 
 const createEmptyParts = (): PartsMap => ({
-  faceBase: [nonePart],
+  
   faceLine: [nonePart],
   cheek: [nonePart],
   eyebrows: [nonePart],
@@ -134,11 +134,11 @@ const createEmptyParts = (): PartsMap => ({
   accessory: [nonePart],
 });
 
-const imageModules = import.meta.glob("./parts/**/*.{png,jpg,jpeg,webp}", {
+const imageModules = import.meta.glob<string>("./parts/**/*.{png,jpg,jpeg,webp}", {
   eager: true,
   query: "?url",
   import: "default",
-}) as Record<string, string>;
+});
 
 function filenameToName(filename: string) {
   return decodeURIComponent(filename)
@@ -174,7 +174,6 @@ const layerOrder: PartCategory[] = [
   "hairBack",
   "hairExtension",
   "clothes",
-  "faceBase",
   "faceLine",
   "cheek",
   "eyebrows",
@@ -240,7 +239,7 @@ const categoryGroups: CategoryGroup[] = [
 
 const categoryLabels: Record<EditableCategory, string> = {
   
-  faceLine: "輪郭",
+faceLine: "輪郭",
   cheek: "チーク",
   eyebrows: "眉毛",
   nose: "鼻",
@@ -266,7 +265,7 @@ const supportsColorVariantCategory = (category: EditableCategory) => {
 };
 
 const makeInitialSelected = (parts: PartsMap): Selected => ({
-  faceBase: parts.faceBase[0],
+  
   faceLine: parts.faceLine[0],
   cheek: parts.cheek[0],
   eyebrows: parts.eyebrows[0],
@@ -344,14 +343,22 @@ export default function PicrewLikeAvatarMaker() {
   const colorFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const visibleOptions = useMemo(() => {
-    return [...baseParts[activeCategory], ...(importedParts[activeCategory] ?? [])];
+    return [...(baseParts[activeCategory] ?? [nonePart]), ...(importedParts[activeCategory] ?? [])];
   }, [activeCategory, importedParts]);
 
   const displaySelected: Selected = useMemo(() => {
-    return { ...selected, ...selectedVariants } as Selected;
+    const merged = { ...selected };
+
+    for (const [category, variant] of Object.entries(selectedVariants)) {
+      if (variant) {
+        merged[category as PartCategory] = variant;
+      }
+    }
+
+    return merged;
   }, [selected, selectedVariants]);
 
-  const activeBasePart = selected[activeCategory];
+  const activeBasePart = selected[activeCategory] ?? nonePart;
   const activeColorVariants = colorVariants[activeCategory]?.[activeBasePart.id] ?? [];
   const activeDisplayVariants = [activeBasePart, ...activeColorVariants];
   const canUseColorVariants = supportsColorVariantCategory(activeCategory) && activeBasePart.id !== "none";
