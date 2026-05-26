@@ -736,9 +736,7 @@ export default function PicrewLikeAvatarMaker() {
                 </div>
               </section>
 
-              <section className="mt-5 rounded-2xl bg-pink-50 p-3 text-xs leading-6 text-[#6b5560] sm:mt-6 sm:p-4 sm:text-sm">
-                素材は src/parts/カテゴリ名/画像.png に置くだけで自動表示されます。manifest.json は不要です。
-              </section>
+              
             </CardContent>
           </Card>
         </section>
