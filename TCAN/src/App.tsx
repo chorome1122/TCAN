@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -18,7 +18,6 @@ import {
   Upload,
   Waves,
 } from "lucide-react";
-
 
 type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "default" | "outline";
@@ -59,14 +58,19 @@ type PartCategory =
   | "eyes"
   | "mouth"
   | "clothes"
-  | "accessory";
+  | "accessory"
+  | "hat";
 
 type EditableCategory = PartCategory;
 type Selected = Record<PartCategory, Part>;
+type PartsMap = Record<PartCategory, Part[]>;
 type ImportedPartsMap = Partial<Record<EditableCategory, Part[]>>;
 type ColorVariantMap = Partial<Record<EditableCategory, Record<string, Part[]>>>;
 type SelectedVariantMap = Partial<Record<EditableCategory, Part>>;
 type IconComponent = React.ElementType<{ className?: string }>;
+
+type ManifestItem = string | Partial<Part>;
+type PartsManifest = Partial<Record<PartCategory, ManifestItem[]>>;
 
 type CategoryChild = {
   key: EditableCategory | "background" | "settings";
@@ -83,6 +87,7 @@ type CategoryGroup = {
 };
 
 const CANVAS_SIZE = 1024;
+const MANIFEST_PATH = "/parts/manifest.json";
 
 const makeSvgDataUrl = (svg: string) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 const makeLayerSvg = (content: string) =>
@@ -95,7 +100,7 @@ const makeLayerSvg = (content: string) =>
 const transparent = makeLayerSvg("");
 const nonePart: Part = { id: "none", name: "なし", src: transparent };
 
-const parts: Record<PartCategory, Part[]> = {
+const createEmptyParts = (): PartsMap => ({
   faceBase: [nonePart],
   faceLine: [nonePart],
   cheek: [nonePart],
@@ -111,7 +116,8 @@ const parts: Record<PartCategory, Part[]> = {
   mouth: [nonePart],
   clothes: [nonePart],
   accessory: [nonePart],
-};
+  hat: [nonePart],
+});
 
 const layerOrder: PartCategory[] = [
   "hairBack",
@@ -128,26 +134,9 @@ const layerOrder: PartCategory[] = [
   "eyes",
   "mouth",
   "hairAccessory",
+  "hat",
   "accessory",
 ];
-
-const initialSelected: Selected = {
-  faceBase: nonePart,
-  faceLine: nonePart,
-  cheek: nonePart,
-  eyebrows: nonePart,
-  nose: nonePart,
-  hairBack: nonePart,
-  hairSide: nonePart,
-  hairFront: nonePart,
-  hairExtension: nonePart,
-  hairAhoge: nonePart,
-  hairAccessory: nonePart,
-  eyes: nonePart,
-  mouth: nonePart,
-  clothes: nonePart,
-  accessory: nonePart,
-};
 
 const categoryGroups: CategoryGroup[] = [
   {
@@ -183,6 +172,7 @@ const categoryGroups: CategoryGroup[] = [
     icon: Shirt,
     children: [
       { key: "clothes", label: "服", icon: Shirt },
+      { key: "hat", label: "帽子", icon: Cat },
       { key: "accessory", label: "アクセサリー", icon: Ribbon },
     ],
   },
@@ -212,6 +202,7 @@ const categoryLabels: Record<EditableCategory, string> = {
   eyes: "目",
   mouth: "口",
   clothes: "服",
+  hat: "帽子",
   accessory: "アクセサリー",
 };
 
@@ -223,8 +214,64 @@ const supportsColorVariantCategory = (category: EditableCategory) => {
   return ["hairFront", "hairBack", "hairSide", "hairExtension", "hairAhoge", "eyes", "clothes"].includes(category);
 };
 
+const makeInitialSelected = (parts: PartsMap): Selected => ({
+  faceBase: parts.faceBase[0],
+  faceLine: parts.faceLine[0],
+  cheek: parts.cheek[0],
+  eyebrows: parts.eyebrows[0],
+  nose: parts.nose[0],
+  hairBack: parts.hairBack[0],
+  hairSide: parts.hairSide[0],
+  hairFront: parts.hairFront[0],
+  hairExtension: parts.hairExtension[0],
+  hairAhoge: parts.hairAhoge[0],
+  hairAccessory: parts.hairAccessory[0],
+  eyes: parts.eyes[0],
+  mouth: parts.mouth[0],
+  clothes: parts.clothes[0],
+  hat: parts.hat[0],
+  accessory: parts.accessory[0],
+});
+
 function pickRandom<T>(items: T[]): T {
   return items[Math.floor(Math.random() * items.length)];
+}
+
+function filenameToName(filename: string) {
+  return filename.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
+}
+
+function manifestItemToPart(category: PartCategory, item: ManifestItem): Part | null {
+  if (typeof item === "string") {
+    return {
+      id: item.replace(/\.[^/.]+$/, ""),
+      name: filenameToName(item),
+      src: `/parts/${category}/${item}`,
+    };
+  }
+
+  if (!item.src) return null;
+
+  const src = item.src.startsWith("/") ? item.src : `/parts/${category}/${item.src}`;
+  const id = item.id ?? item.src.replace(/\.[^/.]+$/, "");
+  const name = item.name ?? filenameToName(item.src);
+
+  return { id, name, src };
+}
+
+function buildPartsFromManifest(manifest: PartsManifest): PartsMap {
+  const next = createEmptyParts();
+
+  for (const category of Object.keys(next) as PartCategory[]) {
+    const manifestItems = manifest[category] ?? [];
+    const converted = manifestItems
+      .map((item) => manifestItemToPart(category, item))
+      .filter((part): part is Part => Boolean(part));
+
+    next[category] = [nonePart, ...converted];
+  }
+
+  return next;
 }
 
 function loadImage(src: string) {
@@ -271,7 +318,8 @@ function AvatarPreview({ selected }: { selected: Selected }) {
 }
 
 export default function PicrewLikeAvatarMaker() {
-  const [selected, setSelected] = useState<Selected>(initialSelected);
+  const [parts, setParts] = useState<PartsMap>(() => createEmptyParts());
+  const [selected, setSelected] = useState<Selected>(() => makeInitialSelected(createEmptyParts()));
   const [activeGroup, setActiveGroup] = useState<string>("hair");
   const [activeCategory, setActiveCategory] = useState<EditableCategory>("hairFront");
   const [importedParts, setImportedParts] = useState<ImportedPartsMap>({});
@@ -282,9 +330,44 @@ export default function PicrewLikeAvatarMaker() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const colorFileInputRef = useRef<HTMLInputElement | null>(null);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadManifest = async () => {
+      try {
+        const response = await fetch(MANIFEST_PATH, { cache: "no-store" });
+        if (!response.ok) {
+          console.warn("manifest.json not found");
+          return;
+        }
+
+        const manifest = (await response.json()) as PartsManifest;
+        const builtParts = buildPartsFromManifest(manifest);
+
+        if (cancelled) return;
+
+        setParts(builtParts);
+        setSelected(makeInitialSelected(builtParts));
+        setSelectedVariants({});
+        console.log("manifest loaded");
+      } catch (error) {
+        console.error(error);
+        if (!cancelled) {
+          console.error("manifest load failed");
+        }
+      }
+    };
+
+    loadManifest();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const visibleOptions = useMemo(() => {
     return [...parts[activeCategory], ...(importedParts[activeCategory] ?? [])];
-  }, [activeCategory, importedParts]);
+  }, [activeCategory, importedParts, parts]);
 
   const displaySelected: Selected = useMemo(() => {
     return { ...selected, ...selectedVariants } as Selected;
@@ -296,7 +379,7 @@ export default function PicrewLikeAvatarMaker() {
   const canUseColorVariants = supportsColorVariantCategory(activeCategory) && activeBasePart.id !== "none";
 
   const resetAll = () => {
-    setSelected(initialSelected);
+    setSelected(makeInitialSelected(parts));
     setSelectedVariants({});
     setSaveMessage("");
   };
@@ -418,7 +501,7 @@ export default function PicrewLikeAvatarMaker() {
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        link.download = `picrew-avatar-${Date.now()}.png`;
+        link.download = `takuan-avatar-${Date.now()}.png`;
         link.style.display = "none";
         document.body.appendChild(link);
         link.click();
@@ -441,7 +524,7 @@ export default function PicrewLikeAvatarMaker() {
             <div className="grid h-12 w-12 place-items-center rounded-2xl bg-pink-100 text-3xl">🎀</div>
             <div>
               <h1 className="text-2xl font-black tracking-tight sm:text-3xl">たくあん</h1>
-              <p className="text-xs text-zinc-500 sm:text-sm">vroid3Dキャラ作成メーカー</p>
+              <p className="text-xs text-zinc-500 sm:text-sm">PNGレイヤーを重ねるキャラメーカー</p>
             </div>
             <Sparkles className="ml-1 h-5 w-5 text-pink-300" />
           </div>
@@ -676,7 +759,7 @@ export default function PicrewLikeAvatarMaker() {
               </section>
 
               <section className="mt-5 rounded-2xl bg-pink-50 p-3 text-xs leading-6 text-[#6b5560] sm:mt-6 sm:p-4 sm:text-sm">
-                右のサムネと中央プレビューは同じ画像パスを参照しています。インポートは確認用です。公開で使う素材は /public/parts/... に置いてGitHubへpushする運用が基本です。
+                素材は public/parts/カテゴリ名/画像.png に配置し、manifest.json に登録すると自動で一覧へ表示されます。
               </section>
             </CardContent>
           </Card>
