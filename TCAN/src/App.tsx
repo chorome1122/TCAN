@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -69,9 +69,6 @@ type ColorVariantMap = Partial<Record<EditableCategory, Record<string, Part[]>>>
 type SelectedVariantMap = Partial<Record<EditableCategory, Part>>;
 type IconComponent = React.ElementType<{ className?: string }>;
 
-type ManifestItem = string | Partial<Part>;
-type PartsManifest = Partial<Record<PartCategory, ManifestItem[]>>;
-
 type CategoryChild = {
   key: EditableCategory | "background" | "settings";
   label: string;
@@ -87,7 +84,6 @@ type CategoryGroup = {
 };
 
 const CANVAS_SIZE = 1024;
-const MANIFEST_PATH = "/parts/manifest.json";
 
 const makeSvgDataUrl = (svg: string) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 const makeLayerSvg = (content: string) =>
@@ -99,6 +95,25 @@ const makeLayerSvg = (content: string) =>
 
 const transparent = makeLayerSvg("");
 const nonePart: Part = { id: "none", name: "なし", src: transparent };
+
+const categories: PartCategory[] = [
+  "faceBase",
+  "faceLine",
+  "cheek",
+  "eyebrows",
+  "nose",
+  "hairBack",
+  "hairSide",
+  "hairFront",
+  "hairExtension",
+  "hairAhoge",
+  "hairAccessory",
+  "eyes",
+  "mouth",
+  "clothes",
+  "hat",
+  "accessory",
+];
 
 const createEmptyParts = (): PartsMap => ({
   faceBase: [nonePart],
@@ -115,9 +130,45 @@ const createEmptyParts = (): PartsMap => ({
   eyes: [nonePart],
   mouth: [nonePart],
   clothes: [nonePart],
-  accessory: [nonePart],
   hat: [nonePart],
+  accessory: [nonePart],
 });
+
+const imageModules = import.meta.glob("./parts/**/*.{png,jpg,jpeg,webp}", {
+  eager: true,
+  query: "?url",
+  import: "default",
+}) as Record<string, string>;
+
+function filenameToName(filename: string) {
+  return decodeURIComponent(filename)
+    .replace(/\.[^/.]+$/, "")
+    .replace(/[-_]/g, " ");
+}
+
+function buildPartsFromFiles(): PartsMap {
+  const next = createEmptyParts();
+
+  for (const [path, src] of Object.entries(imageModules)) {
+    const match = path.match(/^\.\/parts\/([^/]+)\/(.+)$/);
+    if (!match) continue;
+
+    const category = match[1] as PartCategory;
+    const filename = match[2];
+
+    if (!categories.includes(category)) continue;
+
+    next[category].push({
+      id: `${category}-${filename}`,
+      name: filenameToName(filename),
+      src,
+    });
+  }
+
+  return next;
+}
+
+const baseParts = buildPartsFromFiles();
 
 const layerOrder: PartCategory[] = [
   "hairBack",
@@ -237,43 +288,6 @@ function pickRandom<T>(items: T[]): T {
   return items[Math.floor(Math.random() * items.length)];
 }
 
-function filenameToName(filename: string) {
-  return filename.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
-}
-
-function manifestItemToPart(category: PartCategory, item: ManifestItem): Part | null {
-  if (typeof item === "string") {
-    return {
-      id: item.replace(/\.[^/.]+$/, ""),
-      name: filenameToName(item),
-      src: `/parts/${category}/${item}`,
-    };
-  }
-
-  if (!item.src) return null;
-
-  const src = item.src.startsWith("/") ? item.src : `/parts/${category}/${item.src}`;
-  const id = item.id ?? item.src.replace(/\.[^/.]+$/, "");
-  const name = item.name ?? filenameToName(item.src);
-
-  return { id, name, src };
-}
-
-function buildPartsFromManifest(manifest: PartsManifest): PartsMap {
-  const next = createEmptyParts();
-
-  for (const category of Object.keys(next) as PartCategory[]) {
-    const manifestItems = manifest[category] ?? [];
-    const converted = manifestItems
-      .map((item) => manifestItemToPart(category, item))
-      .filter((part): part is Part => Boolean(part));
-
-    next[category] = [nonePart, ...converted];
-  }
-
-  return next;
-}
-
 function loadImage(src: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image();
@@ -318,8 +332,7 @@ function AvatarPreview({ selected }: { selected: Selected }) {
 }
 
 export default function PicrewLikeAvatarMaker() {
-  const [parts, setParts] = useState<PartsMap>(() => createEmptyParts());
-  const [selected, setSelected] = useState<Selected>(() => makeInitialSelected(createEmptyParts()));
+  const [selected, setSelected] = useState<Selected>(() => makeInitialSelected(baseParts));
   const [activeGroup, setActiveGroup] = useState<string>("hair");
   const [activeCategory, setActiveCategory] = useState<EditableCategory>("hairFront");
   const [importedParts, setImportedParts] = useState<ImportedPartsMap>({});
@@ -330,44 +343,9 @@ export default function PicrewLikeAvatarMaker() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const colorFileInputRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadManifest = async () => {
-      try {
-        const response = await fetch(MANIFEST_PATH, { cache: "no-store" });
-        if (!response.ok) {
-          console.warn("manifest.json not found");
-          return;
-        }
-
-        const manifest = (await response.json()) as PartsManifest;
-        const builtParts = buildPartsFromManifest(manifest);
-
-        if (cancelled) return;
-
-        setParts(builtParts);
-        setSelected(makeInitialSelected(builtParts));
-        setSelectedVariants({});
-        console.log("manifest loaded");
-      } catch (error) {
-        console.error(error);
-        if (!cancelled) {
-          console.error("manifest load failed");
-        }
-      }
-    };
-
-    loadManifest();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const visibleOptions = useMemo(() => {
-    return [...parts[activeCategory], ...(importedParts[activeCategory] ?? [])];
-  }, [activeCategory, importedParts, parts]);
+    return [...baseParts[activeCategory], ...(importedParts[activeCategory] ?? [])];
+  }, [activeCategory, importedParts]);
 
   const displaySelected: Selected = useMemo(() => {
     return { ...selected, ...selectedVariants } as Selected;
@@ -379,7 +357,7 @@ export default function PicrewLikeAvatarMaker() {
   const canUseColorVariants = supportsColorVariantCategory(activeCategory) && activeBasePart.id !== "none";
 
   const resetAll = () => {
-    setSelected(makeInitialSelected(parts));
+    setSelected(makeInitialSelected(baseParts));
     setSelectedVariants({});
     setSaveMessage("");
   };
@@ -388,7 +366,7 @@ export default function PicrewLikeAvatarMaker() {
     const next: Selected = { ...selected };
 
     for (const category of layerOrder) {
-      const options = [...parts[category], ...(importedParts[category] ?? [])];
+      const options = [...baseParts[category], ...(importedParts[category] ?? [])];
       next[category] = pickRandom(options.length > 0 ? options : [nonePart]);
     }
 
@@ -759,7 +737,7 @@ export default function PicrewLikeAvatarMaker() {
               </section>
 
               <section className="mt-5 rounded-2xl bg-pink-50 p-3 text-xs leading-6 text-[#6b5560] sm:mt-6 sm:p-4 sm:text-sm">
-                素材は public/parts/カテゴリ名/画像.png に配置し、manifest.json に登録すると自動で一覧へ表示されます。
+                素材は src/parts/カテゴリ名/画像.png に置くだけで自動表示されます。manifest.json は不要です。
               </section>
             </CardContent>
           </Card>
